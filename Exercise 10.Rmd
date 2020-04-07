@@ -1,6 +1,6 @@
 ---
-title: "Clinical Prediction Pipeline"
-author: "JAS"
+title: "Exercise 10: Clinical Prediction Pipeline"
+author: "HF2379"
 date: " "
 output:
   word_document: default
@@ -58,6 +58,7 @@ library(rpart)
 library(caret)
 library(rpart.plot)
 library(pROC)
+library(randomForest)
 
 set.seed(100)
 
@@ -74,10 +75,11 @@ diabetes = nhanes_data %>%
 
 no_diabetes = nhanes_data %>% 
   filter(diabetes == "No") %>% 
-  sample_n(760)
+  sample_n(607)
 
-data_final = rbind(diabetes, no_diabetes)
-
+data_final = rbind(diabetes, no_diabetes) %>% 
+  mutate(
+    diabetes = relevel(diabetes, ref = "No"))
 ```
 
 
@@ -110,20 +112,15 @@ results_reg1 = ifelse(prob_reg_interim > 0.5,1,0)
 
 outcome_reg = (as.numeric(train_nhanes$diabetes) - 1)
 
-table(results_reg1, outcome_reg)
-
-accuracy_reg = mean(results_reg1 == outcome_reg)
-
-round(accuracy_reg, digits = 3)
-
 #2: SVC
 svm_tune = tune(svm, 
-                diabetes~., 
+                diabetes~.,
+                probability = TRUE,
                 data = train_nhanes, 
                 kernel="linear", 
-                range = list(cost = 10^(-1:1)))
+                range = list(cost = 10^(-3:1)))
 
-print(svm_tune)
+summary(svm_tune)
 
   ## best cost = 0.1
 
@@ -133,16 +130,88 @@ nhanes_svm = svm(diabetes ~ .,
                  cost = 0.1,
                  scale = TRUE)
 
-pred_svm = predict(nhanes_svm, 
+pred_svm = predict(svm_tune$best.model, 
                    newdata = train_nhanes[,1:14])
 
-table(pred_svm, train_nhanes$diabetes)
+
+#3: Random Forests
+diabetes_rf1 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = sqrt(ncol(train_nhanes)-1), 
+  importance = TRUE, 
+  ntree = 2000)
+
+plot(1 - diabetes_rf1$err.rate[,1])
+
+diabetes_rf2 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = 5, 
+  importance = TRUE, 
+  ntree = 2000)
+
+plot(1 - diabetes_rf2$err.rate[,1])
+
+diabetes_rf3 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = sqrt(ncol(train_nhanes)-1), 
+  importance = TRUE, 
+  ntree = 1000)
+
+plot(1 - diabetes_rf3$err.rate[,1])
+
+diabetes_rf4 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = 4, 
+  importance = TRUE, 
+  ntree = 1000)
+
+plot(1 - diabetes_rf4$err.rate[,1])
+
+diabetes_rf5 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = 3, 
+  importance = TRUE, 
+  ntree = 1000)
+
+plot(1 - diabetes_rf5$err.rate[,1])
+
+diabetes_rf6 = randomForest(
+  diabetes ~., 
+  data = train_nhanes, 
+  mtry = sqrt(ncol(train_nhanes)-1), 
+  importance = TRUE, 
+  ntree = 500)
+
+plot(1 - diabetes_rf6$err.rate[,1])
+
+```
+
+## Step 4: Accuracy and Calibration plots
+
+```{r}
+## Logistic Regression: 77.6%
+table(results_reg1, outcome_reg) %>% knitr::kable()
+
+accuracy_reg = mean(results_reg1 == outcome_reg)
+
+round(accuracy_reg, digits = 3)
+
+## SVC: 77.9%
+table(pred_svm, train_nhanes$diabetes, probability = TRUE) %>% knitr::kable()
 
 accuracy_svm =  mean(pred_svm == train_nhanes$diabetes)
 
 round(accuracy_svm, digits = 3)
 
-#3: Random Forests
+## RF: 83.7%
+diabetes_rf3
+
+rf_predict = predict(diabetes_rf3, test_nhanes, type = "prob")
 
 
 ```
