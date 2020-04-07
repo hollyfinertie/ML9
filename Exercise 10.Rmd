@@ -1,0 +1,149 @@
+---
+title: "Clinical Prediction Pipeline"
+author: "JAS"
+date: " "
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercise: Comparison between Random Forest SVC and Logistic Regression for Clinical Risk Scores
+
+This exercise uses the same data as Assignment 6. You will use three different algorithms (random forest, SVC and logistic regression) to generate a clincal risk score for diabetes. We will then compare the three models.
+
+For this exercise, please attempt the following before class:
+
+1. Run the code chunk dataprep below to process the data. 
+
+2. Partition data into a 70/30 training/testing split.
+
+3. Construct three models in the training set using each of the three algorithms to predict diabetes. For the random forest, you should try 3 different values of mtry and 3 different numbers of trees and compare them to each other before selecting a final model to compare to the other two. For the SVC, vary the cost parameter using 10-fold cross validation and choose the optimal tuning value. 
+
+4. Compare accuracy across the three models in the training set. 
+
+***
+
+The calculation of the clinical risk scores will be demonstrated within class.As a group, we will do the following:
+
+5. Output predicted probabilities from each of the three models applied within the testing set. 
+
+6. Plot and compare calibration curves across the three algorithms. 
+
+7. Calibrate the predicted probabilites from SVC and Random Forest using two common methods.
+
+8. Plot and compare the new calibration curves across the three algorithms.
+
+***
+
+
+The code below will load the data and process it. 
+
+1. Subsetting the data to only include the relevent features
+2. Removing observations with missing values
+3. Taking a random sample of the non-diabetes so the data will be balanced
+
+
+## Step 1: Load and Import Data
+```{r data_prep}
+library(tidyverse)
+library(lattice)
+library(NHANES)
+library(dplyr)
+library(e1071)
+library(rpart)
+library(caret)
+library(rpart.plot)
+library(pROC)
+
+set.seed(100)
+
+nhanes_data = NHANES %>% 
+  janitor::clean_names() %>% 
+  select(age, gender, race1, education, hh_income, weight, height, pulse, diabetes, bmi, phys_active, smoke100, bp_sys_ave, bp_dia_ave, tot_chol) %>% 
+  mutate(
+    id = row_number(), 
+    id = as.character(id)) %>% 
+  drop_na()
+
+diabetes = nhanes_data %>% 
+  filter(diabetes == "Yes")
+
+no_diabetes = nhanes_data %>% 
+  filter(diabetes == "No") %>% 
+  sample_n(760)
+
+data_final = rbind(diabetes, no_diabetes)
+
+```
+
+
+## Step 2: Training/Testing Data Sets
+
+```{r}
+train_nhanes = data_final %>% sample_frac(.7)
+test_nhanes = anti_join(data_final, train_nhanes, by = 'id') %>% 
+  select(-id, -diabetes, diabetes)
+
+train_nhanes = train_nhanes %>% 
+  select(-id, -diabetes, diabetes)
+```
+
+
+## Step 3: Try 3 Models to Predict Diabetes
+
+```{r}
+#1: Logistic Regression
+nhanes_reg = glm(
+    diabetes ~., 
+    family = binomial(link = 'logit'),
+    data = train_nhanes)
+
+prob_reg_interim = predict(nhanes_reg, 
+                   train_nhanes, 
+                   type = 'response')
+
+results_reg1 = ifelse(prob_reg_interim > 0.5,1,0)
+
+outcome_reg = (as.numeric(train_nhanes$diabetes) - 1)
+
+table(results_reg1, outcome_reg)
+
+accuracy_reg = mean(results_reg1 == outcome_reg)
+
+round(accuracy_reg, digits = 3)
+
+#2: SVC
+svm_tune = tune(svm, 
+                diabetes~., 
+                data = train_nhanes, 
+                kernel="linear", 
+                range = list(cost = 10^(-1:1)))
+
+print(svm_tune)
+
+  ## best cost = 0.1
+
+nhanes_svm = svm(diabetes ~ ., 
+                 data = train_nhanes, 
+                 kernel = "linear", 
+                 cost = 0.1,
+                 scale = TRUE)
+
+pred_svm = predict(nhanes_svm, 
+                   newdata = train_nhanes[,1:14])
+
+table(pred_svm, train_nhanes$diabetes)
+
+accuracy_svm =  mean(pred_svm == train_nhanes$diabetes)
+
+round(accuracy_svm, digits = 3)
+
+#3: Random Forests
+
+
+```
+
